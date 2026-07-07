@@ -87,7 +87,8 @@
     <button class="tb mono" data-ins="italic">*К*</button>
     <button class="tb" data-ins="quote">❝</button>
     <button class="tb" data-ins="list">• Список</button>
-    <button class="tb" data-ins="check">☑ Чек</button>
+    <button class="tb" data-ins="check">☐ Чек</button>
+    <button class="tb" data-ins="checkx">☑ Чек ✓</button>
     <button class="tb" data-ins="table">▦ Таблица</button>
     <button class="tb" data-ins="spoiler">▨ Спойлер</button>
     <button class="tb mono" data-ins="code">`код`</button>
@@ -100,11 +101,10 @@
   <div class="pvlabel">Как придёт в канал</div>
   <div class="phone">
     <div class="bubble" id="preview"></div>
-    <div class="tgbtn">Опубликовать</div>
   </div>
 
   <p class="tips">
-    Разметка: <code># H1</code> · <code>## H2</code> · <code>**жирный**</code> · <code>*курсив*</code> · <code>&gt; цитата</code> · <code>- пункт</code> · <code>- [ ] чек</code> · <code>| a | b |</code> · <code>||спойлер||</code> · <code>[текст](ссылка)</code> · <code>![подпись](https://…jpg)</code>. Выдели слово и жми кнопку — обернёт его.<br>🖼 Картинка — <b>только по ссылке (HTTPS)</b>, ставь <code>![](url)</code> в любое место текста; файлом загрузить нельзя.
+    Разметка: <code># H1</code> · <code>## H2</code> · <code>**жирный**</code> · <code>*курсив*</code> · <code>&gt; цитата</code> · <code>- пункт</code> · <code>- [ ] чек</code>/<code>- [x] с галочкой</code> ·<code>| a | b |</code> · <code>||спойлер||</code> · <code>[текст](ссылка)</code> · <code>![подпись](https://…jpg)</code>. Выдели слово и жми кнопку — обернёт его.<br>🖼 Картинка — <b>только по ссылке (HTTPS)</b>, ставь <code>![](url)</code> в любое место текста; файлом загрузить нельзя.
   </p>
 </div>
 
@@ -132,7 +132,7 @@
     h1:{pre:'# ',post:'',s:'Заголовок'}, h2:{pre:'## ',post:'',s:'Подзаголовок'},
     bold:{pre:'**',post:'**',s:'жирный'}, italic:{pre:'*',post:'*',s:'курсив'},
     quote:{pre:'> ',post:'',s:'цитата'}, list:{pre:'- ',post:'',s:'пункт'},
-    check:{pre:'- [ ] ',post:'',s:'задача'}, spoiler:{pre:'||',post:'||',s:'секрет'},
+    check:{pre:'- [ ] ',post:'',s:'задача'}, checkx:{pre:'- [x] ',post:'',s:'готово'}, spoiler:{pre:'||',post:'||',s:'секрет'},
     code:{pre:'`',post:'`',s:'код'}, link:{pre:'[',post:'](https://)',s:'текст'},
     img:{pre:'![',post:'](https://)',s:'подпись'},
     table:{block:'| Колонка | Колонка |\n|---|---|\n| ячейка | ячейка |\n'}
