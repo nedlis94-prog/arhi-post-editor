@@ -1,0 +1,221 @@
+<!doctype html>
+<!--
+  tg-post-editor.html — Telegram WebApp редактор rich-постов (Part C, вариант A: Markdown + живое превью).
+  Выбор Pavel 2026-07-07 (frontend-design артефакт: A/B/C → A). Markdown 1:1 с тем, как ТГ парсит пост.
+  Деплой: Vercel, имя проекта `arhi-post-editor` → URL совпадёт с WEBAPP_URL в ноде `ff route` (Blil0buGwvTgu8Fn).
+  Отдаёт Markdown боту через Telegram.WebApp.sendData() → бот ловит web_app_data → rich-превью → «Опубликовать».
+  Самодостаточен: единственная внешняя зависимость — telegram-web-app.js (платформенная). sendData ≤ ~3900 Б.
+-->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Редактор поста · Arhischool</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --bg: var(--tg-theme-bg-color, #ffffff);
+    --text: var(--tg-theme-text-color, #1b1e24);
+    --hint: var(--tg-theme-hint-color, #7d848e);
+    --link: var(--tg-theme-link-color, #2b7de0);
+    --accent: var(--tg-theme-button-color, #2b7de0);
+    --accent-text: var(--tg-theme-button-text-color, #ffffff);
+    --sec: var(--tg-theme-secondary-bg-color, #f2f4f8);
+    --line: color-mix(in srgb, var(--hint) 24%, transparent);
+    --code: color-mix(in srgb, var(--hint) 15%, transparent);
+    --mono: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --ui: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ margin:0; padding:0; background:var(--bg); color:var(--text); font:15px/1.5 var(--ui); }
+  .wrap{ max-width:720px; margin:0 auto; padding:14px 14px 92px; }
+  .top{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-bottom:4px; }
+  h1{ font-size:17px; margin:0; font-weight:750; letter-spacing:-.01em; }
+  .counter{ font-size:12px; color:var(--hint); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .counter.over{ color:#e0483d; font-weight:700; }
+  .sub{ color:var(--hint); font-size:12.5px; margin:0 0 10px; }
+
+  .toolbar{ display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 10px; position:sticky; top:0;
+    background:var(--bg); padding:6px 0; z-index:5; }
+  .tb{ border:1px solid var(--line); border-radius:9px; padding:7px 11px; background:var(--bg); color:var(--text);
+    font:13px/1 var(--ui); font-weight:650; cursor:pointer; }
+  .tb:active{ background:var(--sec); transform:translateY(1px); }
+  .tb.mono{ font-family:var(--mono); }
+
+  textarea{ width:100%; min-height:180px; resize:vertical; border:1px solid var(--line); border-radius:12px;
+    padding:12px; background:var(--bg); color:var(--text); font:14px/1.55 var(--mono); }
+  textarea:focus{ outline:none; border-color:var(--accent); }
+
+  .pvlabel{ font-size:11.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--hint);
+    font-weight:700; margin:16px 0 8px; }
+  .phone{ background:color-mix(in srgb, var(--accent) 9%, transparent); border:1px solid var(--line);
+    border-radius:16px; padding:12px; }
+  .bubble{ background:var(--bg); border:1px solid var(--line); border-radius:5px 16px 16px 16px;
+    padding:12px 14px; font-size:14.5px; overflow-x:auto; }
+  .bubble h1{ font-size:18px; margin:.35em 0; font-weight:750; }
+  .bubble h2{ font-size:15.5px; margin:.35em 0; font-weight:700; }
+  .bubble blockquote{ margin:.35em 0; padding:.05em 0 .05em 11px; border-left:3px solid var(--accent); color:var(--hint); }
+  .bubble table{ border-collapse:collapse; width:100%; font-size:12.5px; margin:.4em 0; }
+  .bubble th,.bubble td{ border:1px solid var(--line); padding:5px 8px; text-align:left; }
+  .bubble th{ background:var(--code); }
+  .bubble code{ background:var(--code); padding:1px 5px; border-radius:5px; font:.9em var(--mono); }
+  .bubble pre{ background:var(--code); padding:9px 11px; border-radius:8px; overflow-x:auto; font:12px var(--mono); }
+  .bubble ul{ margin:.3em 0; padding-left:19px; }
+  .bubble a{ color:var(--link); }
+  .bubble .sp{ background:var(--hint); color:transparent; border-radius:4px; cursor:pointer; }
+  .bubble .sp.show{ color:inherit; background:var(--code); }
+  .bubble .empty{ color:var(--hint); font-style:italic; }
+  .tgbtn{ margin-top:9px; background:var(--accent); color:var(--accent-text); border-radius:10px;
+    text-align:center; padding:9px; font-weight:650; font-size:13.5px; }
+
+  .tips{ font-size:12px; color:var(--hint); margin-top:14px; line-height:1.6; }
+  .tips code{ background:var(--code); padding:0 5px; border-radius:4px; font:11.5px var(--mono); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>✍️ Редактор поста</h1>
+    <span class="counter" id="counter">0 Б</span>
+  </div>
+  <p class="sub">Свёрстай пост — кнопки вставляют разметку, снизу видно, как придёт в канал. Готово → «Отправить в бот».</p>
+
+  <div class="toolbar" id="toolbar">
+    <button class="tb" data-ins="h1"># H1</button>
+    <button class="tb" data-ins="h2">## H2</button>
+    <button class="tb mono" data-ins="bold">**Ж**</button>
+    <button class="tb mono" data-ins="italic">*К*</button>
+    <button class="tb" data-ins="quote">❝</button>
+    <button class="tb" data-ins="list">• Список</button>
+    <button class="tb" data-ins="check">☑ Чек</button>
+    <button class="tb" data-ins="table">▦ Таблица</button>
+    <button class="tb" data-ins="spoiler">▨ Спойлер</button>
+    <button class="tb mono" data-ins="code">`код`</button>
+    <button class="tb" data-ins="link">🔗</button>
+    <button class="tb" data-ins="img">🖼 Фото</button>
+  </div>
+
+  <textarea id="src" placeholder="# Заголовок поста&#10;&#10;Текст с **акцентом** и *курсивом*.&#10;&#10;- пункт&#10;- пункт"></textarea>
+
+  <div class="pvlabel">Как придёт в канал</div>
+  <div class="phone">
+    <div class="bubble" id="preview"></div>
+    <div class="tgbtn">Опубликовать</div>
+  </div>
+
+  <p class="tips">
+    Разметка: <code># H1</code> · <code>## H2</code> · <code>**жирный**</code> · <code>*курсив*</code> · <code>&gt; цитата</code> · <code>- пункт</code> · <code>- [ ] чек</code> · <code>| a | b |</code> · <code>||спойлер||</code> · <code>[текст](ссылка)</code> · <code>![подпись](https://…jpg)</code>. Выдели слово и жми кнопку — обернёт его.<br>🖼 Картинка — <b>только по ссылке (HTTPS)</b>, ставь <code>![](url)</code> в любое место текста; файлом загрузить нельзя.
+  </p>
+</div>
+
+<script>
+(function(){
+  var tg = window.Telegram && window.Telegram.WebApp;
+  if(tg){ tg.ready(); tg.expand(); }
+  // --- доступ: страница работает только внутри Telegram (открыта через кнопку бота).
+  //     Реальная защита «кто может опубликовать» — жёсткий аллоулист tg-id в приёмнике бота (pfwDetect),
+  //     а не здесь; поэтому конкретные id в публичной странице НЕ храним. Это только UX-замок. ---
+  if(!(tg && tg.initData)){
+    document.body.innerHTML = '<div style="max-width:440px;margin:64px auto;padding:0 26px;text-align:center;color:#7d848e;font:15px/1.65 -apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif"><div style="font-size:34px;margin-bottom:12px">🔒</div><b style="color:#8b929c">Редактор открывается только из бота</b><br>Зайди через кнопку «🎨 Редактор» в @arhiGC_bot. Публиковать пост может только команда Arhischool.</div>';
+    if(tg && tg.MainButton) tg.MainButton.hide();
+    return;
+  }
+  var LIMIT = 3900; // запас под лимит sendData 4096 байт UTF-8
+  var src = document.getElementById('src');
+  var preview = document.getElementById('preview');
+  var counter = document.getElementById('counter');
+
+  var SNIP = {
+    h1:{pre:'# ',post:'',s:'Заголовок'}, h2:{pre:'## ',post:'',s:'Подзаголовок'},
+    bold:{pre:'**',post:'**',s:'жирный'}, italic:{pre:'*',post:'*',s:'курсив'},
+    quote:{pre:'> ',post:'',s:'цитата'}, list:{pre:'- ',post:'',s:'пункт'},
+    check:{pre:'- [ ] ',post:'',s:'задача'}, spoiler:{pre:'||',post:'||',s:'секрет'},
+    code:{pre:'`',post:'`',s:'код'}, link:{pre:'[',post:'](https://)',s:'текст'},
+    img:{pre:'![',post:'](https://)',s:'подпись'},
+    table:{block:'| Колонка | Колонка |\n|---|---|\n| ячейка | ячейка |\n'}
+  };
+  document.getElementById('toolbar').addEventListener('click', function(e){
+    var b = e.target.closest('.tb'); if(!b) return;
+    var s = SNIP[b.getAttribute('data-ins')]; if(!s) return;
+    var t=src, start=t.selectionStart, end=t.selectionEnd, v=t.value;
+    if(s.block){
+      var nl = (start>0 && v[start-1]!=='\n') ? '\n' : '';
+      var ins = nl + s.block;
+      t.value = v.slice(0,start)+ins+v.slice(end);
+      t.selectionStart = t.selectionEnd = start+ins.length;
+    } else {
+      var sel = v.slice(start,end) || s.s;
+      var ins2 = s.pre+sel+s.post;
+      t.value = v.slice(0,start)+ins2+v.slice(end);
+      t.selectionStart = start+s.pre.length;
+      t.selectionEnd = start+s.pre.length+sel.length;
+    }
+    t.focus(); render();
+  });
+
+  function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function inline(s){
+    s = esc(s);
+    s = s.replace(/\|\|([^|]+)\|\|/g,'<span class="sp" onclick="this.classList.toggle(\'show\')">$1</span>');
+    s = s.replace(/`([^`]+)`/g,'<code>$1</code>');
+    s = s.replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
+    s = s.replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<i>$2</i>');
+    s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g,'<img src="$2" alt="$1" loading="lazy" style="max-width:100%;border-radius:9px;margin:.35em 0;display:block">');
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a>$1</a>');
+    return s;
+  }
+  function isSep(l){ return /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(l) && l.indexOf('-')>=0; }
+  function render(){
+    var md = src.value;
+    var bytes = new Blob([md]).size;
+    counter.textContent = bytes + ' Б';
+    counter.classList.toggle('over', bytes > LIMIT);
+    if(tg && tg.MainButton){
+      if(md.trim() && bytes<=LIMIT){ tg.MainButton.setText('Отправить в бот'); tg.MainButton.enable(); tg.MainButton.show(); }
+      else { tg.MainButton.hide(); }
+    }
+    var lines = md.replace(/\r\n?/g,'\n').split('\n'), html='', i=0;
+    while(i<lines.length){
+      var ln = lines[i];
+      if(/^\s*\|.*\|\s*$/.test(ln) && i+1<lines.length && isSep(lines[i+1])){
+        var head = ln.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(function(c){return c.trim();});
+        html += '<table><thead><tr>'+head.map(function(c){return '<th>'+inline(c)+'</th>';}).join('')+'</tr></thead><tbody>';
+        i += 2;
+        while(i<lines.length && /^\s*\|.*\|\s*$/.test(lines[i])){
+          var cells = lines[i].trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(function(c){return c.trim();});
+          html += '<tr>'+cells.map(function(c){return '<td>'+inline(c)+'</td>';}).join('')+'</tr>'; i++;
+        }
+        html += '</tbody></table>'; continue;
+      }
+      if(/^\s*```/.test(ln)){ var buf=[]; i++; while(i<lines.length && !/^\s*```/.test(lines[i])){ buf.push(esc(lines[i])); i++; } i++; html+='<pre>'+buf.join('\n')+'</pre>'; continue; }
+      if(/^\s*#\s+/.test(ln)){ html+='<h1>'+inline(ln.replace(/^\s*#\s+/,''))+'</h1>'; i++; continue; }
+      if(/^\s*##\s+/.test(ln)){ html+='<h2>'+inline(ln.replace(/^\s*##\s+/,''))+'</h2>'; i++; continue; }
+      if(/^\s*>\s?/.test(ln)){ html+='<blockquote>'+inline(ln.replace(/^\s*>\s?/,''))+'</blockquote>'; i++; continue; }
+      if(/^\s*[-*]\s+/.test(ln)){
+        html+='<ul>';
+        while(i<lines.length && /^\s*[-*]\s+/.test(lines[i])){
+          var item = lines[i].replace(/^\s*[-*]\s+/,''), ck = item.match(/^\[([ xX])\]\s+(.*)/);
+          html += '<li>'+(ck ? ((/[xX]/.test(ck[1])?'☑ ':'☐ ')+inline(ck[2])) : inline(item))+'</li>'; i++;
+        }
+        html+='</ul>'; continue;
+      }
+      if(ln.trim()===''){ html+='<div style="height:.45em"></div>'; i++; continue; }
+      html += '<div>'+inline(ln)+'</div>'; i++;
+    }
+    preview.innerHTML = html || '<span class="empty">пусто — начни печатать</span>';
+  }
+  src.addEventListener('input', render);
+  render();
+
+  function submit(){
+    var md = src.value.trim();
+    if(!md) return;
+    if(new Blob([md]).size > LIMIT){ if(tg) tg.showAlert('Пост длиннее лимита ('+LIMIT+' байт). Сократи текст.'); return; }
+    if(tg && tg.sendData){ tg.sendData(md); }
+    else { alert('Открой через кнопку «🎨 Редактор» в @arhiGC_bot — здесь напрямую не отправить.'); }
+  }
+  if(tg && tg.MainButton){ tg.MainButton.onClick(submit); }
+})();
+</script>
+</body>
+</html>
