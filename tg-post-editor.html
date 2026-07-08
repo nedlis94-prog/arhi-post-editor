@@ -13,7 +13,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Редактор поста · Arhischool</title>
-<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<!-- telegram-web-app.js хостим у себя (тот же GitHub Pages): telegram.org с части РФ-провайдеров
+     не грузится → синхронный скрипт в head вешал страницу белым экраном (баг Никиты, Windows 2026-07-08).
+     Обновление копии: curl -o telegram-web-app.js https://telegram.org/js/telegram-web-app.js → push. -->
+<script src="telegram-web-app.js"></script>
 <style>
   :root{
     --bg: var(--tg-theme-bg-color, #ffffff);
@@ -173,9 +176,12 @@
   //     а не здесь; поэтому конкретные id в публичной странице НЕ храним. Это только UX-замок.
   //     ⚠️ Признак «внутри Telegram» = platform!=='unknown' ИЛИ есть user/initData:
   //     initData у reply-keyboard web_app на Desktop бывает пустым, но platform/user есть. ---
-  var inTG = !!(tg && ((tg.platform && tg.platform!=='unknown') || tg.initData || (tg.initDataUnsafe && tg.initDataUnsafe.user)));
+  var inTG = !!(tg && ((tg.platform && tg.platform!=='unknown') || tg.initData || (tg.initDataUnsafe && tg.initDataUnsafe.user) || window.TelegramWebviewProxy));
   if(!inTG){
-    document.body.innerHTML = '<div style="max-width:440px;margin:64px auto;padding:0 26px;text-align:center;color:#7d848e;font:15px/1.65 -apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif"><div style="font-size:34px;margin-bottom:12px">🔒</div><b style="color:#8b929c">Редактор открывается только из бота</b><br>Зайди через кнопку «🎨 Редактор» в @arhiGC_bot. Публиковать пост может только команда Arhischool.</div>';
+    var lockMsg = tg
+      ? '<b style="color:#8b929c">Редактор открывается только из бота</b><br>Зайди через кнопку «🎨 Редактор» в @arhiGC_bot. Публиковать пост может только команда Arhischool.'
+      : '<b style="color:#8b929c">Не загрузился компонент Telegram</b><br>Закрой это окно и открой редактор ещё раз через кнопку «🎨 Редактор» в @arhiGC_bot.';
+    document.body.innerHTML = '<div style="max-width:440px;margin:64px auto;padding:0 26px;text-align:center;color:#7d848e;font:15px/1.65 -apple-system,BlinkMacSystemFont,\'Segoe UI\',Roboto,sans-serif"><div style="font-size:34px;margin-bottom:12px">🔒</div>'+lockMsg+'</div>';
     if(tg && tg.MainButton) tg.MainButton.hide();
     return;
   }
