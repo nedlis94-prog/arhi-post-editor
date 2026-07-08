@@ -2,8 +2,10 @@
 <!--
   tg-post-editor.html — Telegram WebApp редактор rich-постов (Part C, вариант A: Markdown + живое превью).
   Выбор Pavel 2026-07-07 (frontend-design артефакт: A/B/C → A). Markdown 1:1 с тем, как ТГ парсит пост.
-  Деплой: Vercel, имя проекта `arhi-post-editor` → URL совпадёт с WEBAPP_URL в ноде `ff route` (Blil0buGwvTgu8Fn).
-  Отдаёт Markdown боту через Telegram.WebApp.sendData() → бот ловит web_app_data → rich-превью → «Опубликовать».
+  Хостинг: GitHub Pages (nedlis94-prog/arhi-post-editor) → URL в WEBAPP_URL ноды `ff route` (Blil0buGwvTgu8Fn).
+  Отдаёт данные боту через Telegram.WebApp.sendData() → бот ловит web_app_data → rich-превью → «Опубликовать».
+  Формат sendData: если есть кнопки — JSON {v:2, md, kb:[[{t,u,s}...]...]}; без кнопок — голый Markdown (обратная совместимость).
+  Кнопки: только URL; стили Bot API (смоук 2026-07-08): primary/success/danger + без стиля. Драг-н-дроп на Pointer Events.
   Самодостаточен: единственная внешняя зависимость — telegram-web-app.js (платформенная). sendData ≤ ~3900 Б.
 -->
 <html lang="ru">
@@ -65,8 +67,41 @@
   .bubble .sp{ background:var(--hint); color:transparent; border-radius:4px; cursor:pointer; }
   .bubble .sp.show{ color:inherit; background:var(--code); }
   .bubble .empty{ color:var(--hint); font-style:italic; }
-  .tgbtn{ margin-top:9px; background:var(--accent); color:var(--accent-text); border-radius:10px;
-    text-align:center; padding:9px; font-weight:650; font-size:13.5px; }
+
+  /* --- клавиатура поста (WYSIWYG, драг-н-дроп) --- */
+  .kbrows{ margin-top:8px; }
+  .krow{ display:flex; gap:6px; margin-top:6px; }
+  .kbtn{ flex:1; min-width:0; text-align:center; padding:9px 8px; border-radius:10px; font-weight:650; font-size:13.5px;
+    background:color-mix(in srgb, var(--text) 10%, var(--bg)); color:var(--link);
+    cursor:grab; user-select:none; -webkit-user-select:none; touch-action:none;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .kbtn.st-primary{ background:#2b7de0; color:#fff; }
+  .kbtn.st-success{ background:#31b545; color:#fff; }
+  .kbtn.st-danger{ background:#e0483d; color:#fff; }
+  .kbtn.sel{ box-shadow:0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+  .kbtn.bad{ box-shadow:0 0 0 2px var(--bg), 0 0 0 4px #e0483d; }
+  .kbtn.dragsrc{ opacity:.3; }
+  .rowgap{ height:8px; border-radius:4px; margin:2px 0; }
+  .rowgap.hot{ background:color-mix(in srgb, var(--accent) 45%, transparent); height:14px; }
+  .ghost{ position:fixed; pointer-events:none; z-index:99; opacity:.92; padding:9px 14px; border-radius:10px;
+    font:650 13.5px var(--ui); box-shadow:0 6px 22px rgba(0,0,0,.28); transform:translate(-50%,-50%); }
+
+  .kbbar{ display:flex; gap:6px; align-items:center; margin-top:10px; }
+  .kbhint{ font-size:12px; color:var(--hint); margin-top:6px; line-height:1.55; }
+
+  /* --- форма кнопки --- */
+  .bform{ border:1px solid var(--line); border-radius:12px; padding:11px; margin-top:10px; background:var(--sec); }
+  .bform input{ width:100%; border:1px solid var(--line); border-radius:9px; padding:9px 11px; margin-bottom:8px;
+    background:var(--bg); color:var(--text); font:14px var(--ui); }
+  .bform input:focus{ outline:none; border-color:var(--accent); }
+  .stylerow{ display:flex; gap:6px; flex-wrap:wrap; margin-bottom:9px; }
+  .stc{ border:1px solid var(--line); border-radius:9px; padding:7px 11px; background:var(--bg); color:var(--text);
+    font:12.5px/1 var(--ui); font-weight:650; cursor:pointer; }
+  .stc.st-primary{ background:#2b7de0; color:#fff; border-color:transparent; }
+  .stc.st-success{ background:#31b545; color:#fff; border-color:transparent; }
+  .stc.st-danger{ background:#e0483d; color:#fff; border-color:transparent; }
+  .stc.on{ box-shadow:0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+  .brow2{ display:flex; gap:6px; justify-content:space-between; }
 
   .tips{ font-size:12px; color:var(--hint); margin-top:14px; line-height:1.6; }
   .tips code{ background:var(--code); padding:0 5px; border-radius:4px; font:11.5px var(--mono); }
@@ -101,10 +136,31 @@
   <div class="pvlabel">Как придёт в канал</div>
   <div class="phone">
     <div class="bubble" id="preview"></div>
+    <div class="kbrows" id="kbrows"></div>
+  </div>
+
+  <div class="kbbar">
+    <button class="tb" id="addbtn">＋ Кнопка под пост</button>
+  </div>
+  <div class="kbhint">Кнопки-ссылки под постом (как в канале). <b>Тапни</b> кнопку — редактировать; <b>потяни</b> — поменять порядок, собрать несколько в один ряд или разнести по рядам.</div>
+
+  <div class="bform" id="bform" hidden>
+    <input id="btext" placeholder="Текст кнопки" maxlength="40" autocomplete="off">
+    <input id="burl" placeholder="https://ссылка" inputmode="url" autocomplete="off">
+    <div class="stylerow" id="stylerow">
+      <button class="stc" data-st="">Обычная</button>
+      <button class="stc st-primary" data-st="primary">Синяя</button>
+      <button class="stc st-success" data-st="success">Зелёная</button>
+      <button class="stc st-danger" data-st="danger">Красная</button>
+    </div>
+    <div class="brow2">
+      <button class="tb" id="bdel">🗑 Удалить</button>
+      <button class="tb" id="bok">Готово ✓</button>
+    </div>
   </div>
 
   <p class="tips">
-    Разметка: <code># H1</code> · <code>## H2</code> · <code>**жирный**</code> · <code>*курсив*</code> · <code>&gt; цитата</code> · <code>- пункт</code> · <code>- [ ] чек</code>/<code>- [x] с галочкой</code> ·<code>| a | b |</code> · <code>||спойлер||</code> · <code>[текст](ссылка)</code> · <code>![подпись](https://…jpg)</code>. Выдели слово и жми кнопку — обернёт его.<br>🖼 Картинка — <b>только по ссылке (HTTPS)</b>, ставь <code>![](url)</code> в любое место текста; файлом загрузить нельзя.
+    Разметка: <code># H1</code> · <code>## H2</code> · <code>**жирный**</code> · <code>*курсив*</code> · <code>&gt; цитата</code> · <code>- пункт</code> · <code>- [ ] чек</code>/<code>- [x] с галочкой</code> ·<code>| a | b |</code> · <code>||спойлер||</code> · <code>[текст](ссылка)</code> · <code>![подпись](https://…jpg)</code>. Выдели слово и жми кнопку — обернёт его.<br>🖼 Картинка — <b>только по ссылке (HTTPS)</b>, ставь <code>![](url)</code> в любое место текста; файлом загрузить нельзя.<br>🔘 Кнопки под постом — только со ссылкой (https://…); в ряду до 4 смотрится хорошо, максимум 8.
   </p>
 </div>
 
@@ -124,6 +180,7 @@
     return;
   }
   var LIMIT = 3900; // запас под лимит sendData 4096 байт UTF-8
+  var MAXBTN = 12, MAXROW = 8;
   var src = document.getElementById('src');
   var preview = document.getElementById('preview');
   var counter = document.getElementById('counter');
@@ -168,15 +225,185 @@
     return s;
   }
   function isSep(l){ return /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(l) && l.indexOf('-')>=0; }
-  function render(){
+
+  // ================= КНОПКИ ПОД ПОСТОМ =================
+  // KB = массив рядов, ряд = массив кнопок {t:текст, u:url, s:''|primary|success|danger}
+  var KB = [];
+  var selPos = null;   // [ri,ci] выбранной (форма)
+  var dragPos = null;  // [ri,ci] перетаскиваемой
+  var kbrows = document.getElementById('kbrows');
+  var bform = document.getElementById('bform');
+  var btext = document.getElementById('btext');
+  var burl = document.getElementById('burl');
+  var stylerow = document.getElementById('stylerow');
+  var VALIDU = /^https?:\/\/\S+\.\S+/i;
+
+  function btnValid(b){ return !!(b.t.trim() && VALIDU.test(b.u.trim())); }
+  function totalBtns(){ var n=0; KB.forEach(function(r){ n+=r.length; }); return n; }
+  function cleanRows(){
+    for(var i=KB.length-1;i>=0;i--){ if(!KB[i].length) KB.splice(i,1); }
+    if(selPos && (!KB[selPos[0]] || !KB[selPos[0]][selPos[1]])) { selPos=null; bform.hidden=true; }
+  }
+  function samePos(a,b){ return a&&b&&a[0]===b[0]&&a[1]===b[1]; }
+
+  function renderKB(dragging){
+    var html='';
+    if(dragging) html += '<div class="rowgap" data-gap="0"></div>';
+    KB.forEach(function(row,ri){
+      html += '<div class="krow" data-ri="'+ri+'">';
+      row.forEach(function(b,ci){
+        var cls='kbtn'+(b.s?' st-'+b.s:'')+(samePos(selPos,[ri,ci])?' sel':'')+(!btnValid(b)?' bad':'')+(samePos(dragPos,[ri,ci])?' dragsrc':'');
+        html += '<div class="'+cls+'" data-ri="'+ri+'" data-ci="'+ci+'">'+esc(b.t.trim()||'кнопка…')+'</div>';
+      });
+      html += '</div>';
+      if(dragging) html += '<div class="rowgap" data-gap="'+(ri+1)+'"></div>';
+    });
+    kbrows.innerHTML = html;
+  }
+
+  function openForm(){
+    if(!selPos){ bform.hidden=true; return; }
+    var b = KB[selPos[0]][selPos[1]];
+    bform.hidden=false;
+    btext.value=b.t; burl.value=b.u;
+    Array.prototype.forEach.call(stylerow.children, function(c){ c.classList.toggle('on', c.getAttribute('data-st')===b.s); });
+  }
+  function selBtn(){ return selPos ? KB[selPos[0]][selPos[1]] : null; }
+
+  document.getElementById('addbtn').addEventListener('click', function(){
+    if(totalBtns()>=MAXBTN){ if(tg) tg.showAlert('Максимум '+MAXBTN+' кнопок.'); return; }
+    KB.push([{t:'',u:'https://',s:''}]);
+    selPos=[KB.length-1,0];
+    render(); openForm(); btext.focus();
+  });
+  btext.addEventListener('input', function(){ var b=selBtn(); if(b){ b.t=btext.value; render(); } });
+  burl.addEventListener('input', function(){ var b=selBtn(); if(b){ b.u=burl.value; render(); } });
+  stylerow.addEventListener('click', function(e){
+    var c=e.target.closest('.stc'); if(!c) return;
+    var b=selBtn(); if(!b) return;
+    b.s=c.getAttribute('data-st')||'';
+    render(); openForm();
+  });
+  document.getElementById('bdel').addEventListener('click', function(){
+    if(!selPos) return;
+    KB[selPos[0]].splice(selPos[1],1);
+    selPos=null; bform.hidden=true;
+    cleanRows(); render();
+  });
+  document.getElementById('bok').addEventListener('click', function(){
+    var b=selBtn();
+    if(b && !btnValid(b)){ if(tg) tg.showAlert('У кнопки нужны текст и ссылка вида https://…'); return; }
+    selPos=null; bform.hidden=true; render();
+  });
+
+  // --- драг-н-дроп (Pointer Events: мышь + палец) ---
+  var drag=null; // {sx,sy,moved,ghost}
+  kbrows.addEventListener('pointerdown', function(e){
+    var el = e.target.closest('.kbtn'); if(!el) return;
+    e.preventDefault();
+    dragPos=[+el.getAttribute('data-ri'), +el.getAttribute('data-ci')];
+    drag={sx:e.clientX, sy:e.clientY, moved:false, ghost:null};
+  });
+  document.addEventListener('pointermove', function(e){
+    if(!drag || !dragPos) return;
+    if(!drag.moved){
+      if(Math.abs(e.clientX-drag.sx)+Math.abs(e.clientY-drag.sy) < 8) return;
+      drag.moved=true;
+      var b=KB[dragPos[0]][dragPos[1]];
+      var g=document.createElement('div');
+      g.className='ghost kbtn'+(b.s?' st-'+b.s:'');
+      g.textContent=b.t.trim()||'кнопка…';
+      document.body.appendChild(g); drag.ghost=g;
+      selPos=null; bform.hidden=true;
+      renderKB(true);
+    }
+    drag.ghost.style.left=e.clientX+'px'; drag.ghost.style.top=e.clientY+'px';
+    var hit=document.elementFromPoint(e.clientX,e.clientY); if(!hit) return;
+    var gap=hit.closest ? hit.closest('.rowgap') : null;
+    var chip=hit.closest ? hit.closest('.kbtn') : null;
+    var rowEl=hit.closest ? hit.closest('.krow') : null;
+    Array.prototype.forEach.call(kbrows.querySelectorAll('.rowgap'), function(x){ x.classList.remove('hot'); });
+    if(gap){ gap.classList.add('hot'); moveToGap(+gap.getAttribute('data-gap')); return; }
+    if(chip && !chip.classList.contains('dragsrc')){
+      var tri=+chip.getAttribute('data-ri'), tci=+chip.getAttribute('data-ci');
+      var r=chip.getBoundingClientRect();
+      moveToRow(tri, tci + (e.clientX > r.left+r.width/2 ? 1 : 0));
+      return;
+    }
+    if(rowEl){ moveToRow(+rowEl.getAttribute('data-ri'), KB[+rowEl.getAttribute('data-ri')].length); }
+  });
+  function takeDragged(){ var b=KB[dragPos[0]][dragPos[1]]; KB[dragPos[0]].splice(dragPos[1],1); return b; }
+  function moveToGap(g){
+    var srcRi=dragPos[0];
+    var b=takeDragged();
+    var g2=g;
+    // опустевший исходный ряд убираем; гэпы ниже него сдвигаются на 1
+    if(KB[srcRi] && KB[srcRi].length===0){ KB.splice(srcRi,1); if(g2>srcRi) g2--; }
+    if(g2<0) g2=0; if(g2>KB.length) g2=KB.length;
+    KB.splice(g2,0,[b]);
+    dragPos=[g2,0];
+    renderKB(true); updateOut();
+  }
+  function moveToRow(tri,tci){
+    var srcRi=dragPos[0], srcCi=dragPos[1];
+    if(tri===srcRi && (tci===srcCi||tci===srcCi+1)) return;
+    if(tri!==srcRi && KB[tri].length>=MAXROW) return;
+    var b=takeDragged();
+    if(tri===srcRi && tci>srcCi) tci--;
+    KB[tri].splice(tci,0,b);
+    if(tri!==srcRi && KB[srcRi] && KB[srcRi].length===0){ KB.splice(srcRi,1); if(tri>srcRi)tri--; }
+    dragPos=[tri,tci];
+    renderKB(true); updateOut();
+  }
+  document.addEventListener('pointerup', function(e){
+    if(!drag || !dragPos) return;
+    var wasTap = !drag.moved;
+    if(drag.ghost) drag.ghost.remove();
+    var pos = dragPos.slice();
+    drag=null; dragPos=null;
+    cleanRows();
+    if(wasTap){ selPos = pos; render(); openForm(); }
+    else { render(); }
+  });
+  document.addEventListener('pointercancel', function(){
+    if(drag && drag.ghost) drag.ghost.remove();
+    drag=null; dragPos=null; cleanRows(); render();
+  });
+
+  // ================= ПРЕВЬЮ + ОТПРАВКА =================
+  function kbPayload(){
+    var rows=[];
+    KB.forEach(function(r){
+      var row=[];
+      r.forEach(function(b){ if(btnValid(b)){ var o={t:b.t.trim().slice(0,40), u:b.u.trim()}; if(b.s)o.s=b.s; row.push(o); } });
+      if(row.length) rows.push(row);
+    });
+    return rows.length ? rows : null;
+  }
+  function hasInvalid(){
+    var bad=false;
+    KB.forEach(function(r){ r.forEach(function(b){ if(!btnValid(b)) bad=true; }); });
+    return bad;
+  }
+  function buildData(){
+    var md = src.value.trim();
+    var kb = kbPayload();
+    return kb ? JSON.stringify({v:2, md:md, kb:kb}) : md;
+  }
+  function updateOut(){
     var md = src.value;
-    var bytes = new Blob([md]).size;
+    var data = buildData();
+    var bytes = new Blob([data]).size;
     counter.textContent = bytes + ' Б';
     counter.classList.toggle('over', bytes > LIMIT);
     if(tg && tg.MainButton){
-      if(md.trim() && bytes<=LIMIT){ tg.MainButton.setText('Отправить в бот'); tg.MainButton.enable(); tg.MainButton.show(); }
+      if(md.trim() && bytes<=LIMIT && !hasInvalid()){ tg.MainButton.setText('Отправить в бот'); tg.MainButton.enable(); tg.MainButton.show(); }
       else { tg.MainButton.hide(); }
     }
+  }
+  function render(){
+    var md = src.value;
+    updateOut();
     var lines = md.replace(/\r\n?/g,'\n').split('\n'), html='', i=0;
     while(i<lines.length){
       var ln = lines[i];
@@ -206,6 +433,7 @@
       html += '<div>'+inline(ln)+'</div>'; i++;
     }
     preview.innerHTML = html || '<span class="empty">пусто — начни печатать</span>';
+    renderKB(!!(drag && drag.moved));
   }
   src.addEventListener('input', render);
   render();
@@ -213,8 +441,10 @@
   function submit(){
     var md = src.value.trim();
     if(!md) return;
-    if(new Blob([md]).size > LIMIT){ if(tg) tg.showAlert('Пост длиннее лимита ('+LIMIT+' байт). Сократи текст.'); return; }
-    if(tg && tg.sendData){ tg.sendData(md); }
+    if(hasInvalid()){ if(tg) tg.showAlert('Есть недозаполненная кнопка — допиши текст и ссылку или удали её.'); return; }
+    var data = buildData();
+    if(new Blob([data]).size > LIMIT){ if(tg) tg.showAlert('Пост длиннее лимита ('+LIMIT+' байт). Сократи текст.'); return; }
+    if(tg && tg.sendData){ tg.sendData(data); }
     else { alert('Открой через кнопку «🎨 Редактор» в @arhiGC_bot — здесь напрямую не отправить.'); }
   }
   if(tg && tg.MainButton){ tg.MainButton.onClick(submit); }
