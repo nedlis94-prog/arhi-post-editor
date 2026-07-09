@@ -60,6 +60,11 @@
   .bubble h1{ font-size:18px; margin:.35em 0; font-weight:750; }
   .bubble h2{ font-size:15.5px; margin:.35em 0; font-weight:700; }
   .bubble blockquote{ margin:.35em 0; padding:.05em 0 .05em 11px; border-left:3px solid var(--accent); color:var(--hint); }
+  .bubble details{ margin:.35em 0; padding:.15em 0 .15em 11px; border-left:3px solid var(--accent); }
+  .bubble summary{ cursor:pointer; color:var(--accent); font-weight:600; list-style:none; }
+  .bubble summary::-webkit-details-marker{ display:none; }
+  .bubble summary::before{ content:'▸ '; }
+  .bubble details[open] summary::before{ content:'▾ '; }
   .bubble table{ border-collapse:collapse; width:100%; font-size:12.5px; margin:.4em 0; }
   .bubble th,.bubble td{ border:1px solid var(--line); padding:5px 8px; text-align:left; }
   .bubble th{ background:var(--code); }
@@ -129,6 +134,7 @@
     <button class="tb" data-ins="checkx">☑ Чек ✓</button>
     <button class="tb" data-ins="table">▦ Таблица</button>
     <button class="tb" data-ins="spoiler">▨ Спойлер</button>
+    <button class="tb" data-ins="details">▾ Раскрыв. блок</button>
     <button class="tb mono" data-ins="code">`код`</button>
     <button class="tb" data-ins="link">🔗</button>
     <button class="tb" data-ins="img">🖼 Фото</button>
@@ -163,7 +169,7 @@
   </div>
 
   <p class="tips">
-    Разметка: <code># H1</code> · <code>## H2</code> · <code>**жирный**</code> · <code>*курсив*</code> · <code>&gt; цитата</code> · <code>- пункт</code> · <code>- [ ] чек</code>/<code>- [x] с галочкой</code> ·<code>| a | b |</code> · <code>||спойлер||</code> · <code>[текст](ссылка)</code> · <code>![подпись](https://…jpg)</code>. Выдели слово и жми кнопку — обернёт его.<br>🖼 Картинка — <b>только по ссылке (HTTPS)</b>, ставь <code>![](url)</code> в любое место текста; файлом загрузить нельзя.<br>🔘 Кнопки под постом — только со ссылкой (https://…); в ряду до 4 смотрится хорошо, максимум 8.
+    Разметка: <code># H1</code> · <code>## H2</code> · <code>**жирный**</code> · <code>*курсив*</code> · <code>&gt; цитата</code> · <code>- пункт</code> · <code>- [ ] чек</code>/<code>- [x] с галочкой</code> ·<code>| a | b |</code> · <code>||спойлер||</code> · <code>&lt;details&gt;&lt;summary&gt;заголовок&lt;/summary&gt;…&lt;/details&gt;</code> раскрыв. блок · <code>[текст](ссылка)</code> · <code>![подпись](https://…jpg)</code>. Выдели слово и жми кнопку — обернёт его.<br>🖼 Картинка — <b>только по ссылке (HTTPS)</b>, ставь <code>![](url)</code> в любое место текста; файлом загрузить нельзя.<br>🔘 Кнопки под постом — только со ссылкой (https://…); в ряду до 4 смотрится хорошо, максимум 8.
   </p>
 </div>
 
@@ -198,7 +204,8 @@
     check:{pre:'- [ ] ',post:'',s:'задача'}, checkx:{pre:'- [x] ',post:'',s:'готово'}, spoiler:{pre:'||',post:'||',s:'секрет'},
     code:{pre:'`',post:'`',s:'код'}, link:{pre:'[',post:'](https://)',s:'текст'},
     img:{pre:'![',post:'](https://)',s:'подпись'},
-    table:{block:'| Колонка | Колонка |\n|---|---|\n| ячейка | ячейка |\n'}
+    table:{block:'| Колонка | Колонка |\n|---|---|\n| ячейка | ячейка |\n'},
+    details:{block:'<details><summary>Заголовок (виден всегда)</summary>\n\nСкрытый текст — раскроется по тапу.\n\n</details>\n'}
   };
   document.getElementById('toolbar').addEventListener('click', function(e){
     var b = e.target.closest('.tb'); if(!b) return;
@@ -413,6 +420,9 @@
     var lines = md.replace(/\r\n?/g,'\n').split('\n'), html='', i=0;
     while(i<lines.length){
       var ln = lines[i];
+      var mdet = ln.match(/^\s*<details><summary>([\s\S]*?)<\/summary>\s*$/i);
+      if(mdet){ html+='<details><summary>'+inline(mdet[1])+'</summary>'; i++; continue; }
+      if(/^\s*<\/details>\s*$/i.test(ln)){ html+='</details>'; i++; continue; }
       if(/^\s*\|.*\|\s*$/.test(ln) && i+1<lines.length && isSep(lines[i+1])){
         var head = ln.trim().replace(/^\|/,'').replace(/\|$/,'').split('|').map(function(c){return c.trim();});
         html += '<table><thead><tr>'+head.map(function(c){return '<th>'+inline(c)+'</th>';}).join('')+'</tr></thead><tbody>';
