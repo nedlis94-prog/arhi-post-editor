@@ -46,6 +46,7 @@
     font:13px/1 var(--ui); font-weight:650; cursor:pointer; }
   .tb:active{ background:var(--sec); transform:translateY(1px); }
   .tb.mono{ font-family:var(--mono); }
+  .tb.on{ background:var(--accent); color:var(--accent-text); border-color:transparent; }
 
   textarea{ width:100%; min-height:180px; resize:vertical; border:1px solid var(--line); border-radius:12px;
     padding:12px; background:var(--bg); color:var(--text); font:14px/1.55 var(--mono); }
@@ -168,6 +169,23 @@
     </div>
   </div>
 
+  <div id="sched" hidden style="margin-top:16px">
+    <div class="pvlabel">⏰ Когда опубликовать</div>
+    <div class="toolbar" style="position:static">
+      <button class="tb" data-day="today">Сегодня</button>
+      <button class="tb" data-day="tomorrow">Завтра</button>
+      <label class="tb">📅 <input type="date" id="odate" style="border:none;background:transparent;font:inherit;color:inherit"></label>
+    </div>
+    <div class="toolbar" style="position:static">
+      <button class="tb" data-hour="9">09</button><button class="tb" data-hour="10">10</button>
+      <button class="tb" data-hour="12">12</button><button class="tb" data-hour="15">15</button>
+      <button class="tb" data-hour="18">18</button><button class="tb" data-hour="20">20</button>
+      <button class="tb" data-hour="21">21</button>
+      <label class="tb">⌨️ <input type="number" id="ohour" min="0" max="23" style="width:46px;border:none;background:transparent;font:inherit;color:inherit"></label>
+    </div>
+    <div class="kbhint" id="schlabel">Выбери день и целый час. Минуты не поддерживаются.</div>
+  </div>
+
   <p class="tips">
     Разметка: <code># H1</code> · <code>## H2</code> · <code>**жирный**</code> · <code>*курсив*</code> · <code>&gt; цитата</code> · <code>- пункт</code> · <code>- [ ] чек</code>/<code>- [x] с галочкой</code> ·<code>| a | b |</code> · <code>||спойлер||</code> · <code>&lt;details&gt;&lt;summary&gt;заголовок&lt;/summary&gt;…&lt;/details&gt;</code> раскрыв. блок · <code>[текст](ссылка)</code> · <code>![подпись](https://…jpg)</code>. Выдели слово и жми кнопку — обернёт его.<br>🖼 Картинка — <b>только по ссылке (HTTPS)</b>, ставь <code>![](url)</code> в любое место текста; файлом загрузить нельзя.<br>🔘 Кнопки под постом — только со ссылкой (https://…); в ряду до 4 смотрится хорошо, максимум 8.
   </p>
@@ -191,6 +209,9 @@
     if(tg && tg.MainButton) tg.MainButton.hide();
     return;
   }
+  var EDIT=null; try{ EDIT=new URLSearchParams(location.search).get('e'); }catch(e){}
+  var LOAD_URL='https://smmenjoy.ru/webhook/post-load';
+  var SAVE_URL='https://smmenjoy.ru/webhook/post-save';
   var LIMIT = 3900; // запас под лимит sendData 4096 байт UTF-8
   var MAXBTN = 12, MAXROW = 8;
   var src = document.getElementById('src');
@@ -242,6 +263,19 @@
   // ================= КНОПКИ ПОД ПОСТОМ =================
   // KB = массив рядов, ряд = массив кнопок {t:текст, u:url, s:''|primary|success|danger}
   var KB = [];
+  // --- пикер времени (только режим правки) ---
+  var pickDate=null, pickHour=null;
+  function mskNow(){ return new Date(Date.now()+10800000); }
+  function ymd(d){ return d.toISOString().slice(0,10); }
+  function markDay(){ Array.prototype.forEach.call(document.querySelectorAll('#sched [data-day]'),function(b){ var v=b.getAttribute('data-day')==='today'?ymd(mskNow()):ymd(new Date(mskNow().getTime()+86400000)); b.classList.toggle('on', v===pickDate); }); }
+  function markHour(){ Array.prototype.forEach.call(document.querySelectorAll('#sched [data-hour]'),function(b){ b.classList.toggle('on', parseInt(b.getAttribute('data-hour'),10)===pickHour); }); }
+  function schLabel(){ var el=document.getElementById('schlabel'); if(!el) return; if(pickDate&&pickHour!=null){ el.textContent='→ '+pickDate.slice(8,10)+'.'+pickDate.slice(5,7)+' в '+(pickHour<10?'0':'')+pickHour+':00 МСК. Минуты нельзя — только целый час.'; } else { el.textContent='Выбери день и целый час. Минуты не поддерживаются.'; } }
+  document.getElementById('sched').addEventListener('click', function(e){
+    var d=e.target.closest('[data-day]'); if(d){ pickDate=d.getAttribute('data-day')==='today'?ymd(mskNow()):ymd(new Date(mskNow().getTime()+86400000)); document.getElementById('odate').value=pickDate; markDay(); schLabel(); updateOut(); return; }
+    var h=e.target.closest('[data-hour]'); if(h){ pickHour=parseInt(h.getAttribute('data-hour'),10); document.getElementById('ohour').value=pickHour; markHour(); schLabel(); updateOut(); }
+  });
+  document.getElementById('odate').addEventListener('input', function(){ if(/^\d{4}-\d{2}-\d{2}$/.test(this.value)){ pickDate=this.value; markDay(); schLabel(); updateOut(); } });
+  document.getElementById('ohour').addEventListener('input', function(){ var v=parseInt(this.value,10); if(v>=0&&v<=23){ pickHour=v; markHour(); schLabel(); updateOut(); } });
   var selPos = null;   // [ri,ci] выбранной (форма)
   var dragPos = null;  // [ri,ci] перетаскиваемой
   var kbrows = document.getElementById('kbrows');
@@ -410,7 +444,9 @@
     counter.textContent = bytes + ' Б';
     counter.classList.toggle('over', bytes > LIMIT);
     if(tg && tg.MainButton){
-      if(md.trim() && bytes<=LIMIT && !hasInvalid()){ tg.MainButton.setText('Отправить в бот'); tg.MainButton.enable(); tg.MainButton.show(); }
+      var okFresh = md.trim() && bytes<=LIMIT && !hasInvalid();
+      var okEdit = okFresh && pickDate!=null && pickHour!=null;
+      if(EDIT? okEdit : okFresh){ tg.MainButton.setText(EDIT?'Сохранить':'Отправить в бот'); tg.MainButton.enable(); tg.MainButton.show(); }
       else { tg.MainButton.hide(); }
     }
   }
@@ -453,7 +489,42 @@
   }
   src.addEventListener('input', render);
   render();
+  if(EDIT){
+    document.querySelector('h1').textContent='✏️ Правка отложенного';
+    document.querySelector('.sub').textContent='Меняй текст, кнопки и время. Готово → «Сохранить».';
+    document.getElementById('sched').hidden=false;
+    loadPost();
+  }
 
+  // ================= РЕЖИМ ПРАВКИ (load/save через сервер) =================
+  function api(url,body){ return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json();}); }
+  function authBody(extra){ var uid=(tg&&tg.initDataUnsafe&&tg.initDataUnsafe.user&&tg.initDataUnsafe.user.id)?tg.initDataUnsafe.user.id:''; var b={cand:EDIT, initData:(tg&&tg.initData)||'', uid:uid}; if(extra){ for(var k in extra) b[k]=extra[k]; } return b; }
+  function lockEdit(msg){ preview.innerHTML='<span class="empty">'+msg+'</span>'; src.disabled=true; if(tg&&tg.MainButton) tg.MainButton.hide(); }
+  function loadPost(){
+    api(LOAD_URL, authBody()).then(function(j){
+      if(!j || j.error){ lockEdit(j&&j.error==='forbidden'?'Нет доступа к правке.':'Пост уже опубликован или снят — править нельзя.'); return; }
+      src.value=j.md||'';
+      KB=(Array.isArray(j.kb)?j.kb:[]).map(function(r){ return (Array.isArray(r)?r:[]).map(function(b){ return {t:String(b.text||''),u:String(b.url||''),s:String(b.style||'')}; }); }).filter(function(r){return r.length;});
+      pickDate=j.date||null; pickHour=(j.hour!=null?parseInt(j.hour,10):null);
+      if(pickDate) document.getElementById('odate').value=pickDate;
+      if(pickHour!=null) document.getElementById('ohour').value=pickHour;
+      markDay(); markHour(); schLabel(); render();
+    }).catch(function(){ lockEdit('Не удалось загрузить пост. Закрой и открой снова.'); });
+  }
+  function saveEdit(){
+    var md=src.value.trim();
+    if(!md){ if(tg)tg.showAlert('Пост пустой.'); return; }
+    if(hasInvalid()){ if(tg)tg.showAlert('Есть недозаполненная кнопка — допиши или удали.'); return; }
+    if(pickDate==null||pickHour==null){ if(tg)tg.showAlert('Выбери дату и час публикации.'); return; }
+    if(new Blob([buildData()]).size>LIMIT){ if(tg)tg.showAlert('Пост длиннее лимита ('+LIMIT+' байт). Сократи.'); return; }
+    if(tg&&tg.MainButton) tg.MainButton.showProgress();
+    api(SAVE_URL, authBody({md:md, kb:kbPayload(), date:pickDate, hour:pickHour})).then(function(j){
+      if(tg&&tg.MainButton) tg.MainButton.hideProgress();
+      if(j&&j.ok){ if(tg) tg.close(); return; }
+      var e=(j&&j.error)||'server';
+      if(tg) tg.showAlert(e==='past'?'Это время уже прошло — выбери заново.':(e==='not_editable'?'Пост уже опубликован или снят — править нельзя.':(e==='bad'?'Проверь текст, дату и час.':'Не удалось сохранить, попробуй ещё.')));
+    }).catch(function(){ if(tg&&tg.MainButton) tg.MainButton.hideProgress(); if(tg) tg.showAlert('Сеть недоступна, попробуй ещё.'); });
+  }
   function submit(){
     var md = src.value.trim();
     if(!md) return;
@@ -463,7 +534,7 @@
     if(tg && tg.sendData){ tg.sendData(data); }
     else { alert('Открой через кнопку «🎨 Редактор» в @arhiGC_bot — здесь напрямую не отправить.'); }
   }
-  if(tg && tg.MainButton){ tg.MainButton.onClick(submit); }
+  if(tg && tg.MainButton){ tg.MainButton.onClick(function(){ EDIT?saveEdit():submit(); }); }
 })();
 </script>
 </body>
